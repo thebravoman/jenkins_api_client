@@ -66,8 +66,8 @@ module JenkinsApi
       "http_open_timeout",
       "http_read_timeout",
       "ssl",
-      "crt_file_path",
-      "key_file_path",
+      "crt",
+      "key",
       "follow_redirects",
       "identity_file",
       "cookies"
@@ -155,9 +155,6 @@ module JenkinsApi
       @ssl ||= false
       @proxy_protocol ||= 'http'
       
-      @crt_file = File.read(@crt_file_path) if @crt_file_path
-      @key_file = File.read(@key_file_path) if @key_file_path
-
       # Setting log options
       if @logger
         raise ArgumentError, "logger parameter must be a Logger object" unless @logger.is_a?(Logger)
@@ -305,8 +302,8 @@ module JenkinsApi
       http = Net::HTTP.new(host, port)
       http.verify_mode = OpenSSL::SSL::VERIFY_NONE
       http.use_ssl = @ssl
-      http.cert = OpenSSL::X509::Certificate.new(@crt_file)
-      http.key = OpenSSL::PKey::RSA.new(@key_file)
+      http.cert = OpenSSL::X509::Certificate.new(@crt) if @crt
+      http.key = OpenSSL::PKey::RSA.new(@key) if @key
       http
     end
     private :construct_http
@@ -341,8 +338,8 @@ module JenkinsApi
         http.use_ssl = true
         http.verify_mode = OpenSSL::SSL::VERIFY_NONE
 
-        http.cert = OpenSSL::X509::Certificate.new(@crt_file)
-        http.key = OpenSSL::PKey::RSA.new(@key_file)
+        http.cert = OpenSSL::X509::Certificate.new(@crt) if @crt
+        http.key = OpenSSL::PKey::RSA.new(@key) if @key
       end
       http.set_debug_output($stdout)
 
