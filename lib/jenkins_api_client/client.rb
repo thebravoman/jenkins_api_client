@@ -66,6 +66,8 @@ module JenkinsApi
       "http_open_timeout",
       "http_read_timeout",
       "ssl",
+      "crt_file_path",
+      "key_file_path",
       "follow_redirects",
       "identity_file",
       "cookies"
@@ -91,6 +93,8 @@ module JenkinsApi
     # @option args [String] :proxy_protocol the proxy protocol ('socks' or 'http' (defaults to HTTP)
     # @option args [String] :jenkins_path ("/") the optional context path for Jenkins
     # @option args [Boolean] :ssl (false) indicates if Jenkins is accessible over HTTPS
+    # @option args [String] :crt_file_path path to the crt pem file when jenkins is 
+    # @option args [String] :key_file_path path to the key pem file 
     # @option args [Boolean] :follow_redirects this argument causes the client to follow a redirect (jenkins can
     #   return a 30x when starting a build)
     # @option args [Fixnum] :timeout (120) This argument sets the timeout for operations that take longer (in seconds)
@@ -150,6 +154,9 @@ module JenkinsApi
       @http_read_timeout = DEFAULT_HTTP_READ_TIMEOUT unless @http_read_timeout
       @ssl ||= false
       @proxy_protocol ||= 'http'
+      
+      @crt_file = File.read(@crt_file_path) if @crt_file_path
+      @key_file = File.read(@key_file_path) if @key_file_path
 
       # Setting log options
       if @logger
@@ -270,18 +277,40 @@ module JenkinsApi
     def get_artifact(job_name,filename)
       @artifact = job.find_artifact(job_name)
       uri = URI.parse(@artifact)
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.verify_mode = OpenSSL::SSL::VERIFY_NONE
-      http.use_ssl = @ssl
-      request = Net::HTTP::Get.new(uri.request_uri)
+      http = constuct_http uri.host, uri.port
+      download_file http, uri.request_uri, file_name
+    end
+
+    def get_artifact_by_path(job_name,build_number,artifact_path,filename)
+      build_path = job.build_path(job_name, build_number)
+      http = construct_http @server_ip, @server_port
+      download_file http, "#{@jenkins_path}/#{build_path}/#{artifact_path}", filename
+    end
+
+    def download_file http, uri, filename
+      request = Net::HTTP::Get.new(uri)
       request.basic_auth(@username, @password)
       response = http.request(request)
       if response.code == "200"
-        File.write(File.expand_path(filename), response.body)
+        File.open(File.expand_path(filename),"wb") do |file|
+          file.write(response.body)
+        end
       else
         raise "Couldn't get the artifact"
       end
     end
+    private :download_file
+
+    def construct_http host, port
+      http = Net::HTTP.new(host, port)
+      http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+      http.use_ssl = @ssl
+      http.cert = OpenSSL::X509::Certificate.new(@crt_file)
+      http.key = OpenSSL::PKey::RSA.new(@key_file)
+      http
+    end
+    private :construct_http
+
 
     # Connects to the Jenkins server, sends the specified request and returns
     # the response.
@@ -311,7 +340,11 @@ module JenkinsApi
       if @ssl
         http.use_ssl = true
         http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+
+        http.cert = OpenSSL::X509::Certificate.new(@crt_file)
+        http.key = OpenSSL::PKey::RSA.new(@key_file)
       end
+      http.set_debug_output($stdout)
 
       http.open_timeout = @http_open_timeout
       http.read_timeout = @http_read_timeout
